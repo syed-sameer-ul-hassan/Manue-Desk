@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Manue Desk
+Comment=A modern .desktop file creator for Linux desktop environments
+Exec=manue-desk
+Icon=manue-desk
+Terminal=false
+Categories=Utility;Development;
+Keywords=desktop;launcher;shortcut;creator;

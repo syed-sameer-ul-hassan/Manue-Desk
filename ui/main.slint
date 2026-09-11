@@ -1,0 +1,2146 @@
+export struct DesktopEntryData {
+    name: string,
+    exec: string,
+    icon: string,
+    terminal: bool,
+    file-path: string,
+    filename: string,
+}
+
+export component MainWindow inherits Window {
+    title: "Manue Desk";
+    width: 920px;
+    height: 560px;
+    background: #061516;
+    no-frame: true;
+
+    in-out property <string> app-name: "";
+    in-out property <string> exec-path: "";
+    in-out property <string> icon-path: "";
+    in-out property <bool> run-in-terminal: false;
+    in-out property <string> status-message: "";
+    in-out property <bool> success: false;
+
+    // Settings properties
+    in-out property <string> default-output-dir: "~/.local/share/applications";
+    in-out property <bool> notify-on-create: true;
+    in-out property <bool> auto-clear-after-create: true;
+    in-out property <bool> validate-exec-path: false;
+
+    // Manage Shortcuts properties
+    in-out property <[DesktopEntryData]> shortcuts-list: [];
+    in-out property <string> shortcuts-search-query: "";
+    in-out property <int> shortcuts-count: 0;
+    in-out property <bool> is-editing-shortcut: false;
+    in-out property <string> edit-app-name: "";
+    in-out property <string> edit-exec-path: "";
+    in-out property <string> edit-icon-path: "";
+    in-out property <bool> edit-run-in-terminal: false;
+    in-out property <string> edit-file-path: "";
+
+    // Confirmation Dialog properties
+    in-out property <bool> show-confirm-dialog: false;
+    in-out property <string> confirm-title: "";
+    in-out property <string> confirm-message: "";
+    in-out property <int> confirm-action-type: 0; // 0 = delete, 1 = save edit
+    in-out property <string> pending-delete-path: "";
+
+    // Tab: 0 = launcher, 1 = manage shortcuts, 2 = settings
+    in-out property <int> current-tab: 0;
+
+    callback create-launcher();
+    callback browse-exec();
+    callback browse-icon();
+    callback browse-output-dir();
+
+    // Manage shortcuts callbacks
+    callback refresh-shortcuts();
+    callback delete-shortcut(string);
+    callback save-shortcut(string, string, string, string, bool);
+    callback browse-edit-exec();
+    callback browse-edit-icon();
+    callback filter-shortcuts(string);
+
+    // Custom window controls
+    callback close-window();
+    callback minimize-window();
+    callback open-url(string);
+
+    Rectangle {
+        // Root container — children can be positioned freely
+        border-radius: 10px;
+        clip: true;
+
+        HorizontalLayout {
+            spacing: 0px;
+
+        Rectangle {
+            width: 72px;
+            background: #061516;
+
+            VerticalLayout {
+                alignment: center;
+                padding-left: 8px;
+                padding-right: 8px;
+
+                Rectangle {
+                    width: 56px;
+                    height: 520px;
+                    border-radius: 12px;
+                    background: #08282a;
+                    border-width: 1px;
+                    border-color: #184c4e;
+
+                    VerticalLayout {
+                        padding-top: 24px;
+                        padding-bottom: 24px;
+                        alignment: space-between;
+
+                        VerticalLayout {
+                            spacing: 14px;
+                            alignment: start;
+
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 35px;
+                                    height: 35px;
+                                    border-radius: 9px;
+                                    background: root.current-tab == 0 ? #134b4d : transparent;
+                                    animate background { duration: 150ms; }
+
+                                    TouchArea {
+                                        clicked => {
+                                            root.current-tab = 0;
+                                            root.is-editing-shortcut = false;
+                                        }
+                                        mouse-cursor: pointer;
+                                    }
+
+                                    Image {
+                                        source: @image-url("assets/app-icon.svg");
+                                        width: 20px;
+                                        height: 20px;
+                                        x: (parent.width - 20px) / 2;
+                                        y: (parent.height - 20px) / 2;
+                                        colorize: root.current-tab == 0 ? #FFFFFF : #6e8ca3;
+                                        animate colorize { duration: 150ms; }
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 35px;
+                                    height: 35px;
+                                    border-radius: 9px;
+                                    background: root.current-tab == 1 ? #134b4d : transparent;
+                                    animate background { duration: 150ms; }
+
+                                    TouchArea {
+                                        clicked => {
+                                            root.current-tab = 1;
+                                            root.refresh-shortcuts();
+                                        }
+                                        mouse-cursor: pointer;
+                                    }
+
+                                    Image {
+                                        source: @image-url("assets/apps.svg");
+                                        width: 20px;
+                                        height: 20px;
+                                        x: (parent.width - 20px) / 2;
+                                        y: (parent.height - 20px) / 2;
+                                        colorize: root.current-tab == 1 ? #FFFFFF : #6e8ca3;
+                                        animate colorize { duration: 150ms; }
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 35px;
+                                    height: 35px;
+                                    border-radius: 9px;
+                                    background: root.current-tab == 2 ? #134b4d : transparent;
+                                    animate background { duration: 150ms; }
+
+                                    TouchArea {
+                                        clicked => {
+                                            root.current-tab = 2;
+                                            root.is-editing-shortcut = false;
+                                        }
+                                        mouse-cursor: pointer;
+                                    }
+
+                                    Image {
+                                        source: @image-url("assets/settings.svg");
+                                        width: 20px;
+                                        height: 20px;
+                                        x: (parent.width - 20px) / 2;
+                                        y: (parent.height - 20px) / 2;
+                                        colorize: root.current-tab == 2 ? #FFFFFF : #6e8ca3;
+                                        animate colorize { duration: 150ms; }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Info Page icon button at bottom
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 35px;
+                                height: 35px;
+                                border-radius: 9px;
+                                background: root.current-tab == 3 ? #134b4d : transparent;
+                                animate background { duration: 150ms; }
+
+                                TouchArea {
+                                    clicked => {
+                                        root.current-tab = 3;
+                                        root.is-editing-shortcut = false;
+                                    }
+                                    mouse-cursor: pointer;
+                                }
+
+                                Image {
+                                    source: @image-url("assets/info.svg");
+                                    width: 20px;
+                                    height: 20px;
+                                    x: (parent.width - 20px) / 2;
+                                    y: (parent.height - 20px) / 2;
+                                    colorize: root.current-tab == 3 ? #FFFFFF : #6e8ca3;
+                                    animate colorize { duration: 150ms; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            width: 508px;
+            horizontal-stretch: 0;
+            clip: true;
+            background: #061516;
+
+            if root.current-tab == 0 : VerticalLayout {
+                padding-left: 36px;
+                padding-right: 36px;
+                padding-top: 32px;
+                padding-bottom: 32px;
+                alignment: start;
+                spacing: 20px;
+
+                VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Create Launcher";
+                        color: #FFFFFF;
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: "Configure application desktop entry";
+                        color: #5d7d8e;
+                        font-size: 13px;
+                    }
+                }
+
+                Text {
+                    text: "APPLICATION DETAILS";
+                    color: #6e8ca3;
+                    font-size: 11px;
+                    font-weight: 700;
+                    letter-spacing: 1.2px;
+                }
+
+                VerticalLayout {
+                    spacing: 14px;
+
+                    Rectangle {
+                        height: 52px;
+                        border-radius: 10px;
+                        background: #0f3d3f;
+                        border-width: 1px;
+                        border-color: #1f5759;
+
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            spacing: 14px;
+
+                            VerticalLayout {
+                                alignment: center;
+                                Image {
+                                    source: @image-url("assets/apps.svg");
+                                    width: 18px;
+                                    height: 18px;
+                                    colorize: #FFFFFF;
+                                }
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                min-width: 0px;
+                                clip: true;
+
+                                if root.app-name == "" : Text {
+                                    text: "Application Name (e.g. VS Code, Blender)";
+                                    color: #5d7d8e;
+                                    font-size: 13px;
+                                    vertical-alignment: center;
+                                    width: 100%;
+                                    height: 100%;
+                                    overflow: elide;
+                                }
+
+                                TextInput {
+                                    text <=> root.app-name;
+                                    font-size: 13px;
+                                    color: #FFFFFF;
+                                    vertical-alignment: center;
+                                    single-line: true;
+                                    width: 100%;
+                                    height: 100%;
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        Rectangle {
+                            height: 52px;
+                            horizontal-stretch: 1;
+                            min-width: 0px;
+                            border-radius: 10px;
+                            background: #0f3d3f;
+                            border-width: 1px;
+                            border-color: #1f5759;
+
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                spacing: 14px;
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    Image {
+                                        source: @image-url("assets/play.svg");
+                                        width: 18px;
+                                        height: 18px;
+                                        colorize: #FFFFFF;
+                                    }
+                                }
+
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    min-width: 0px;
+                                    clip: true;
+
+                                    if root.exec-path == "" : Text {
+                                        text: "Executable Path (e.g. /usr/bin/app)";
+                                        color: #5d7d8e;
+                                        font-size: 13px;
+                                        vertical-alignment: center;
+                                        width: 100%;
+                                        height: 100%;
+                                        overflow: elide;
+                                    }
+
+                                    TextInput {
+                                        text <=> root.exec-path;
+                                        font-size: 13px;
+                                        color: #FFFFFF;
+                                        vertical-alignment: center;
+                                        single-line: true;
+                                        width: 100%;
+                                        height: 100%;
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: 108px;
+                            height: 52px;
+                            border-radius: 10px;
+                            background: #FFFFFF;
+                            border-width: 1px;
+                            border-color: #0e4749;
+
+                            TouchArea {
+                                clicked => { root.browse-exec(); }
+                                mouse-cursor: pointer;
+                            }
+
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 8px;
+                                width: 100%;
+                                height: 100%;
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    Image {
+                                        source: @image-url("assets/folder.svg");
+                                        width: 16px;
+                                        height: 16px;
+                                        colorize: #0e4749;
+                                    }
+                                }
+
+                                Text {
+                                    text: "Browse";
+                                    color: #0e4749;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    // Field 3: Icon Path
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        Rectangle {
+                            height: 52px;
+                            horizontal-stretch: 1;
+                            min-width: 0px;
+                            border-radius: 10px;
+                            background: #0f3d3f;
+                            border-width: 1px;
+                            border-color: #1f5759;
+
+                            HorizontalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                spacing: 14px;
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    Image {
+                                        source: @image-url("assets/image.svg");
+                                        width: 18px;
+                                        height: 18px;
+                                        colorize: #FFFFFF;
+                                    }
+                                }
+
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    min-width: 0px;
+                                    clip: true;
+
+                                    if root.icon-path == "" : Text {
+                                        text: "Icon Path (SVG, PNG, JPG, WebP)";
+                                        color: #5d7d8e;
+                                        font-size: 13px;
+                                        vertical-alignment: center;
+                                        width: 100%;
+                                        height: 100%;
+                                        overflow: elide;
+                                    }
+
+                                    TextInput {
+                                        text <=> root.icon-path;
+                                        font-size: 13px;
+                                        color: #FFFFFF;
+                                        vertical-alignment: center;
+                                        single-line: true;
+                                        width: 100%;
+                                        height: 100%;
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: 108px;
+                            height: 52px;
+                            border-radius: 10px;
+                            background: #FFFFFF;
+                            border-width: 1px;
+                            border-color: #0e4749;
+
+                            TouchArea {
+                                clicked => { root.browse-icon(); }
+                                mouse-cursor: pointer;
+                            }
+
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 8px;
+                                width: 100%;
+                                height: 100%;
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    Image {
+                                        source: @image-url("assets/folder.svg");
+                                        width: 16px;
+                                        height: 16px;
+                                        colorize: #0e4749;
+                                    }
+                                }
+
+                                Text {
+                                    text: "Browse";
+                                    color: #0e4749;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Terminal Toggle Card
+                Rectangle {
+                    height: 52px;
+                    border-radius: 10px;
+                    background: #0e4749;
+                    border-width: 1px;
+                    border-color: #184c4e;
+
+                    TouchArea {
+                        clicked => { root.run-in-terminal = !root.run-in-terminal; }
+                        mouse-cursor: pointer;
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        alignment: space-between;
+
+                        Text {
+                            text: "Run in Terminal window";
+                            color: #FFFFFF;
+                            font-size: 13px;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 44px;
+                                height: 24px;
+                                border-radius: 12px;
+                                background: root.run-in-terminal ? #FFFFFF : #174b4e;
+                                animate background { duration: 150ms; }
+
+                                Rectangle {
+                                    width: 18px;
+                                    height: 18px;
+                                    border-radius: 9px;
+                                    background: root.run-in-terminal ? #0e4749 : #FFFFFF;
+                                    x: root.run-in-terminal ? 23px : 3px;
+                                    y: 3px;
+                                    animate x { duration: 150ms; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── MANAGE SHORTCUTS LIST (Tab 1, List View) ──
+            if root.current-tab == 1 && !root.is-editing-shortcut : VerticalLayout {
+                padding-left: 36px;
+                padding-right: 36px;
+                padding-top: 32px;
+                padding-bottom: 24px;
+                alignment: start;
+                spacing: 16px;
+
+                // Header
+                HorizontalLayout {
+                    alignment: space-between;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        Text {
+                            text: "Manage Shortcuts";
+                            color: #FFFFFF;
+                            font-size: 24px;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: "Modify or delete existing desktop entries";
+                            color: #5d7d8e;
+                            font-size: 13px;
+                        }
+                    }
+
+                    // Refresh Button
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 38px;
+                            height: 38px;
+                            border-radius: 9px;
+                            background: #0e4749;
+                            border-width: 1px;
+                            border-color: #1f5759;
+
+                            TouchArea {
+                                clicked => { root.refresh-shortcuts(); }
+                                mouse-cursor: pointer;
+                            }
+
+                            Image {
+                                source: @image-url("assets/refresh.svg");
+                                width: 18px;
+                                height: 18px;
+                                x: (parent.width - 18px) / 2;
+                                y: (parent.height - 18px) / 2;
+                                colorize: #FFFFFF;
+                            }
+                        }
+                    }
+                }
+
+                // Search Bar
+                Rectangle {
+                    height: 44px;
+                    border-radius: 10px;
+                    background: #0f3d3f;
+                    border-width: 1px;
+                    border-color: #1f5759;
+
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 12px;
+
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                source: @image-url("assets/search.svg");
+                                width: 16px;
+                                height: 16px;
+                                colorize: #FFFFFF;
+                            }
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            min-width: 0px;
+                            clip: true;
+
+                            if root.shortcuts-search-query == "" : Text {
+                                text: "Search shortcuts by name...";
+                                color: #5d7d8e;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                                width: 100%;
+                                height: 100%;
+                            }
+
+                            TextInput {
+                                text <=> root.shortcuts-search-query;
+                                font-size: 13px;
+                                color: #FFFFFF;
+                                vertical-alignment: center;
+                                single-line: true;
+                                width: 100%;
+                                height: 100%;
+                                edited => {
+                                    root.filter-shortcuts(root.shortcuts-search-query);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Shortcuts List (Flickable)
+                Flickable {
+                    height: 370px;
+                    viewport-height: (root.shortcuts-list.length * 68) * 1px;
+
+                    VerticalLayout {
+                        spacing: 8px;
+                        alignment: start;
+
+                        if root.shortcuts-list.length == 0 : Rectangle {
+                            height: 140px;
+                            border-radius: 12px;
+                            background: #0e4749;
+                            border-width: 1px;
+                            border-color: #184c4e;
+
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 8px;
+
+                                Text {
+                                    text: "No shortcuts found";
+                                    color: #8ea8c3;
+                                    font-size: 15px;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                }
+                                Text {
+                                    text: "No matching .desktop files in ~/.local/share/applications";
+                                    color: #5d7d8e;
+                                    font-size: 12px;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
+
+                        for item[idx] in root.shortcuts-list : Rectangle {
+                            height: 60px;
+                            border-radius: 10px;
+                            background: #0e4749;
+                            border-width: 1px;
+                            border-color: #184c4e;
+
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                spacing: 12px;
+                                alignment: space-between;
+
+                                // Icon & text
+                                HorizontalLayout {
+                                    spacing: 12px;
+                                    horizontal-stretch: 1;
+                                    min-width: 0px;
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Rectangle {
+                                            width: 36px;
+                                            height: 36px;
+                                            border-radius: 8px;
+                                            background: #0e4749;
+                                            border-width: 1px;
+                                            border-color: #174b4e;
+
+                                            Image {
+                                                source: @image-url("assets/shield.svg");
+                                                width: 18px;
+                                                height: 18px;
+                                                x: (parent.width - 18px) / 2;
+                                                y: (parent.height - 18px) / 2;
+                                                colorize: #FFFFFF;
+                                            }
+                                        }
+                                    }
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 2px;
+                                        horizontal-stretch: 1;
+                                        min-width: 0px;
+
+                                        Text {
+                                            text: item.name;
+                                            color: #FFFFFF;
+                                            font-size: 13px;
+                                            font-weight: 600;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: item.exec != "" ? item.exec : item.filename;
+                                            color: #5d7d8e;
+                                            font-size: 11px;
+                                            overflow: elide;
+                                        }
+                                    }
+                                }
+
+                                // Actions (Edit & Delete buttons)
+                                VerticalLayout {
+                                    alignment: center;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+
+                                        // Edit button
+                                        Rectangle {
+                                            width: 34px;
+                                            height: 34px;
+                                            border-radius: 7px;
+                                            background: #FFFFFF;
+                                            border-width: 1px;
+                                            border-color: #0e4749;
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.edit-app-name = item.name;
+                                                    root.edit-exec-path = item.exec;
+                                                    root.edit-icon-path = item.icon;
+                                                    root.edit-run-in-terminal = item.terminal;
+                                                    root.edit-file-path = item.file-path;
+                                                    root.is-editing-shortcut = true;
+                                                }
+                                                mouse-cursor: pointer;
+                                            }
+
+                                            Image {
+                                                source: @image-url("assets/edit.svg");
+                                                width: 16px;
+                                                height: 16px;
+                                                x: (parent.width - 16px) / 2;
+                                                y: (parent.height - 16px) / 2;
+                                                colorize: #0e4749;
+                                            }
+                                        }
+
+                                        // Delete button
+                                        Rectangle {
+                                            width: 34px;
+                                            height: 34px;
+                                            border-radius: 7px;
+                                            background: #2a1535;
+                                            border-width: 1px;
+                                            border-color: #8B3F5A;
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.pending-delete-path = item.file-path;
+                                                    root.confirm-title = "Delete Shortcut?";
+                                                    root.confirm-message = "Are you sure you want to delete '" + item.name + "'? This will permanently remove the .desktop file.";
+                                                    root.confirm-action-type = 0;
+                                                    root.show-confirm-dialog = true;
+                                                }
+                                                mouse-cursor: pointer;
+                                            }
+
+                                            Image {
+                                                source: @image-url("assets/trash.svg");
+                                                width: 16px;
+                                                height: 16px;
+                                                x: (parent.width - 16px) / 2;
+                                                y: (parent.height - 16px) / 2;
+                                                colorize: #FFFFFF;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── MANAGE SHORTCUTS EDIT VIEW (Tab 1, Edit Form) ──
+            if root.current-tab == 1 && root.is-editing-shortcut : VerticalLayout {
+                padding-left: 36px;
+                padding-right: 36px;
+                padding-top: 24px;
+                padding-bottom: 24px;
+                alignment: start;
+                spacing: 16px;
+
+                // Back Header
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+
+                    VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 34px;
+                            height: 34px;
+                            border-radius: 8px;
+                            background: #0e4749;
+                            border-width: 1px;
+                            border-color: #1f5759;
+
+                            TouchArea {
+                                clicked => { root.is-editing-shortcut = false; }
+                                mouse-cursor: pointer;
+                            }
+
+                            Text {
+                                text: "←";
+                                color: #FFFFFF;
+                                font-size: 16px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: 100%;
+                                height: 100%;
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        Text {
+                            text: "Edit Shortcut";
+                            color: #FFFFFF;
+                            font-size: 20px;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.edit-file-path;
+                            color: #5d7d8e;
+                            font-size: 11px;
+                            overflow: elide;
+                            width: 380px;
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 12px;
+
+                    // Edit Field 1: Name
+                    Rectangle {
+                        height: 50px;
+                        border-radius: 10px;
+                        background: #0f3d3f;
+                        border-width: 1px;
+                        border-color: #1f5759;
+
+                        HorizontalLayout {
+                            padding-left: 14px;
+                            padding-right: 14px;
+                            spacing: 12px;
+
+                            VerticalLayout {
+                                alignment: center;
+                                Image {
+                                    source: @image-url("assets/apps.svg");
+                                    width: 16px;
+                                    height: 16px;
+                                    colorize: #FFFFFF;
+                                }
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                min-width: 0px;
+                                clip: true;
+
+                                TextInput {
+                                    text <=> root.edit-app-name;
+                                    font-size: 13px;
+                                    color: #FFFFFF;
+                                    vertical-alignment: center;
+                                    single-line: true;
+                                    width: 100%;
+                                    height: 100%;
+                                }
+                            }
+                        }
+                    }
+
+                    // Edit Field 2: Exec Path
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        Rectangle {
+                            height: 50px;
+                            horizontal-stretch: 1;
+                            min-width: 0px;
+                            border-radius: 10px;
+                            background: #0f3d3f;
+                            border-width: 1px;
+                            border-color: #1f5759;
+
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                spacing: 12px;
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    Image {
+                                        source: @image-url("assets/play.svg");
+                                        width: 16px;
+                                        height: 16px;
+                                        colorize: #FFFFFF;
+                                    }
+                                }
+
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    min-width: 0px;
+                                    clip: true;
+
+                                    TextInput {
+                                        text <=> root.edit-exec-path;
+                                        font-size: 13px;
+                                        color: #FFFFFF;
+                                        vertical-alignment: center;
+                                        single-line: true;
+                                        width: 100%;
+                                        height: 100%;
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: 108px;
+                            height: 50px;
+                            border-radius: 10px;
+                            background: #FFFFFF;
+                            border-width: 1px;
+                            border-color: #0e4749;
+
+                            TouchArea {
+                                clicked => { root.browse-edit-exec(); }
+                                mouse-cursor: pointer;
+                            }
+
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 8px;
+                                width: 100%;
+                                height: 100%;
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    Image {
+                                        source: @image-url("assets/folder.svg");
+                                        width: 16px;
+                                        height: 16px;
+                                        colorize: #0e4749;
+                                    }
+                                }
+
+                                Text {
+                                    text: "Browse";
+                                    color: #0e4749;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    // Edit Field 3: Icon Path
+                    HorizontalLayout {
+                        spacing: 10px;
+
+                        Rectangle {
+                            height: 50px;
+                            horizontal-stretch: 1;
+                            min-width: 0px;
+                            border-radius: 10px;
+                            background: #0f3d3f;
+                            border-width: 1px;
+                            border-color: #1f5759;
+
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                spacing: 12px;
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    Image {
+                                        source: @image-url("assets/image.svg");
+                                        width: 16px;
+                                        height: 16px;
+                                        colorize: #FFFFFF;
+                                    }
+                                }
+
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    min-width: 0px;
+                                    clip: true;
+
+                                    TextInput {
+                                        text <=> root.edit-icon-path;
+                                        font-size: 13px;
+                                        color: #FFFFFF;
+                                        vertical-alignment: center;
+                                        single-line: true;
+                                        width: 100%;
+                                        height: 100%;
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: 108px;
+                            height: 50px;
+                            border-radius: 10px;
+                            background: #FFFFFF;
+                            border-width: 1px;
+                            border-color: #0e4749;
+
+                            TouchArea {
+                                clicked => { root.browse-edit-icon(); }
+                                mouse-cursor: pointer;
+                            }
+
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 8px;
+                                width: 100%;
+                                height: 100%;
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    Image {
+                                        source: @image-url("assets/folder.svg");
+                                        width: 16px;
+                                        height: 16px;
+                                        colorize: #0e4749;
+                                    }
+                                }
+
+                                Text {
+                                    text: "Browse";
+                                    color: #0e4749;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    // Edit Field 4: Terminal Toggle
+                    Rectangle {
+                        height: 50px;
+                        border-radius: 10px;
+                        background: #0e4749;
+                        border-width: 1px;
+                        border-color: #184c4e;
+
+                        TouchArea {
+                            clicked => { root.edit-run-in-terminal = !root.edit-run-in-terminal; }
+                            mouse-cursor: pointer;
+                        }
+
+                        HorizontalLayout {
+                            padding-left: 16px;
+                            padding-right: 16px;
+                            alignment: space-between;
+
+                            Text {
+                                text: "Run in Terminal window";
+                                color: #FFFFFF;
+                                font-size: 13px;
+                                font-weight: 500;
+                                vertical-alignment: center;
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 44px;
+                                    height: 24px;
+                                    border-radius: 12px;
+                                    background: root.edit-run-in-terminal ? #FFFFFF : #174b4e;
+                                    animate background { duration: 150ms; }
+
+                                    Rectangle {
+                                        width: 18px;
+                                        height: 18px;
+                                        border-radius: 9px;
+                                        background: root.edit-run-in-terminal ? #0e4749 : #FFFFFF;
+                                        x: root.edit-run-in-terminal ? 23px : 3px;
+                                        y: 3px;
+                                        animate x { duration: 150ms; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Save / Cancel Buttons
+                    HorizontalLayout {
+                        spacing: 12px;
+
+                        Rectangle {
+                            height: 46px;
+                            horizontal-stretch: 1;
+                            border-radius: 10px;
+                            background: #184c4e;
+
+                            TouchArea {
+                                clicked => { root.is-editing-shortcut = false; }
+                                mouse-cursor: pointer;
+                            }
+
+                            Text {
+                                text: "Cancel";
+                                color: #6e8ca3;
+                                font-size: 14px;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: 100%;
+                                height: 100%;
+                            }
+                        }
+
+                        Rectangle {
+                            height: 46px;
+                            horizontal-stretch: 1;
+                            border-radius: 10px;
+                            background: #FFFFFF;
+
+                            TouchArea {
+                                clicked => {
+                                    if (root.edit-app-name == "") {
+                                        root.status-message = "⚠ Application name cannot be empty.";
+                                        root.success = false;
+                                    } else {
+                                        root.confirm-title = "Save Changes?";
+                                        root.confirm-message = "Are you sure you want to update the shortcut settings for '" + root.edit-app-name + "'?";
+                                        root.confirm-action-type = 1;
+                                        root.show-confirm-dialog = true;
+                                    }
+                                }
+                                mouse-cursor: pointer;
+                            }
+
+                            Text {
+                                text: "Save Changes";
+                                color: #061516;
+                                font-size: 14px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: 100%;
+                                height: 100%;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── SETTINGS PAGE (Tab 2) ──
+            if root.current-tab == 2 : VerticalLayout {
+                padding-left: 36px;
+                padding-right: 36px;
+                padding-top: 32px;
+                padding-bottom: 32px;
+                alignment: start;
+                spacing: 24px;
+
+                // Page Header
+                VerticalLayout {
+                    spacing: 4px;
+                    Text {
+                        text: "Settings";
+                        color: #FFFFFF;
+                        font-size: 24px;
+                        font-weight: 700;
+                    }
+                    Text {
+                        text: "Customize Manue Desk behaviour";
+                        color: #5d7d8e;
+                        font-size: 13px;
+                    }
+                }
+
+                // ── Section: OUTPUT ──
+                VerticalLayout {
+                    spacing: 10px;
+
+                    Text {
+                        text: "OUTPUT";
+                        color: #6e8ca3;
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 1.2px;
+                    }
+
+                    Rectangle {
+                        height: 64px;
+                        border-radius: 12px;
+                        background: #0e4749;
+                        border-width: 1px;
+                        border-color: #184c4e;
+
+                        HorizontalLayout {
+                            padding-left: 18px;
+                            padding-right: 18px;
+                            alignment: space-between;
+
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 3px;
+                                Text {
+                                    text: "Output Directory";
+                                    color: #FFFFFF;
+                                    font-size: 13px;
+                                    font-weight: 600;
+                                }
+                                Rectangle {
+                                    height: 18px;
+                                    min-width: 0px;
+                                    clip: true;
+                                    Text {
+                                        text: root.default-output-dir;
+                                        color: #5d7d8e;
+                                        font-size: 11px;
+                                        overflow: elide;
+                                        width: 260px;
+                                    }
+                                }
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+
+                                Rectangle {
+                                    width: 90px;
+                                    height: 34px;
+                                    border-radius: 8px;
+                                    background: #FFFFFF;
+                                    border-width: 1px;
+                                    border-color: #0e4749;
+
+                                    TouchArea {
+                                        clicked => { root.browse-output-dir(); }
+                                        mouse-cursor: pointer;
+                                    }
+
+                                    HorizontalLayout {
+                                        alignment: center;
+                                        spacing: 6px;
+                                        width: 100%;
+                                        height: 100%;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Image {
+                                                source: @image-url("assets/folder.svg");
+                                                width: 14px;
+                                                height: 14px;
+                                                colorize: #0e4749;
+                                            }
+                                        }
+                                        Text {
+                                            text: "Change";
+                                            color: #0e4749;
+                                            font-size: 12px;
+                                            font-weight: 700;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Section: BEHAVIOUR ──
+                VerticalLayout {
+                    spacing: 10px;
+
+                    Text {
+                        text: "BEHAVIOUR";
+                        color: #6e8ca3;
+                        font-size: 11px;
+                        font-weight: 700;
+                        letter-spacing: 1.2px;
+                    }
+
+                    VerticalLayout {
+                        spacing: 8px;
+
+                        // Notify on create
+                        Rectangle {
+                            height: 52px;
+                            border-radius: 10px;
+                            background: #0e4749;
+                            border-width: 1px;
+                            border-color: #184c4e;
+
+                            TouchArea {
+                                clicked => { root.notify-on-create = !root.notify-on-create; }
+                                mouse-cursor: pointer;
+                            }
+
+                            HorizontalLayout {
+                                padding-left: 18px;
+                                padding-right: 18px;
+                                alignment: space-between;
+
+                                Text {
+                                    text: "Show notification after creating";
+                                    color: #FFFFFF;
+                                    font-size: 13px;
+                                    font-weight: 500;
+                                    vertical-alignment: center;
+                                }
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 44px;
+                                        height: 24px;
+                                        border-radius: 12px;
+                                        background: root.notify-on-create ? #FFFFFF : #174b4e;
+                                        animate background { duration: 150ms; }
+                                        Rectangle {
+                                            width: 18px;
+                                            height: 18px;
+                                            border-radius: 9px;
+                                            background: root.notify-on-create ? #0e4749 : #FFFFFF;
+                                            x: root.notify-on-create ? 23px : 3px;
+                                            y: 3px;
+                                            animate x { duration: 150ms; }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Auto-clear after create
+                        Rectangle {
+                            height: 52px;
+                            border-radius: 10px;
+                            background: #0e4749;
+                            border-width: 1px;
+                            border-color: #184c4e;
+
+                            TouchArea {
+                                clicked => { root.auto-clear-after-create = !root.auto-clear-after-create; }
+                                mouse-cursor: pointer;
+                            }
+
+                            HorizontalLayout {
+                                padding-left: 18px;
+                                padding-right: 18px;
+                                alignment: space-between;
+
+                                Text {
+                                    text: "Clear fields after creating launcher";
+                                    color: #FFFFFF;
+                                    font-size: 13px;
+                                    font-weight: 500;
+                                    vertical-alignment: center;
+                                }
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 44px;
+                                        height: 24px;
+                                        border-radius: 12px;
+                                        background: root.auto-clear-after-create ? #FFFFFF : #174b4e;
+                                        animate background { duration: 150ms; }
+                                        Rectangle {
+                                            width: 18px;
+                                            height: 18px;
+                                            border-radius: 9px;
+                                            background: root.auto-clear-after-create ? #0e4749 : #FFFFFF;
+                                            x: root.auto-clear-after-create ? 23px : 3px;
+                                            y: 3px;
+                                            animate x { duration: 150ms; }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Validate exec path
+                        Rectangle {
+                            height: 52px;
+                            border-radius: 10px;
+                            background: #0e4749;
+                            border-width: 1px;
+                            border-color: #184c4e;
+
+                            TouchArea {
+                                clicked => { root.validate-exec-path = !root.validate-exec-path; }
+                                mouse-cursor: pointer;
+                            }
+
+                            HorizontalLayout {
+                                padding-left: 18px;
+                                padding-right: 18px;
+                                alignment: space-between;
+
+                                Text {
+                                    text: "Validate executable path exists";
+                                    color: #FFFFFF;
+                                    font-size: 13px;
+                                    font-weight: 500;
+                                    vertical-alignment: center;
+                                }
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    Rectangle {
+                                        width: 44px;
+                                        height: 24px;
+                                        border-radius: 12px;
+                                        background: root.validate-exec-path ? #FFFFFF : #174b4e;
+                                        animate background { duration: 150ms; }
+                                        Rectangle {
+                                            width: 18px;
+                                            height: 18px;
+                                            border-radius: 9px;
+                                            background: root.validate-exec-path ? #0e4749 : #FFFFFF;
+                                            x: root.validate-exec-path ? 23px : 3px;
+                                            y: 3px;
+                                            animate x { duration: 150ms; }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if root.current-tab == 3 : VerticalLayout {
+                padding-left: 36px;
+                padding-right: 36px;
+                padding-top: 28px;
+                padding-bottom: 28px;
+                alignment: start;
+                spacing: 18px;
+
+                VerticalLayout {
+                    spacing: 4px;
+                    alignment: start;
+                    Text {
+                        text: "Developer & App Info";
+                        color: #FFFFFF;
+                        font-size: 24px;
+                        font-weight: 700;
+                        horizontal-alignment: left;
+                    }
+                    Text {
+                        text: "About manue-desk and open source licensing";
+                        color: #5d7d8e;
+                        font-size: 13px;
+                        horizontal-alignment: left;
+                    }
+                }
+
+                // Developer Profile Card (Info on left, Squarish Avatar on right)
+                Rectangle {
+                    height: 200px;
+                    border-radius: 14px;
+                    background: #082123;
+                    border-width: 1px;
+                    border-color: #17474a;
+
+                    HorizontalLayout {
+                        padding-left: 22px;
+                        padding-right: 22px;
+                        padding-top: 16px;
+                        padding-bottom: 16px;
+                        spacing: 20px;
+                        alignment: space-between;
+
+                        // Details & Clickable Links on left
+                        VerticalLayout {
+                            spacing: 6px;
+                            alignment: center;
+
+                            Text {
+                                text: "DEVELOPER PROFILE";
+                                color: #6e8ca3;
+                                font-size: 10px;
+                                font-weight: 800;
+                                letter-spacing: 1.5px;
+                                horizontal-alignment: left;
+                            }
+
+                            Text {
+                                text: "Syed Sameer Ul Hassan";
+                                color: #FFFFFF;
+                                font-size: 18px;
+                                font-weight: 700;
+                                horizontal-alignment: left;
+                            }
+
+                            // GitHub Link
+                            Rectangle {
+                                height: 20px;
+                                background: transparent;
+                                TouchArea {
+                                    clicked => { root.open-url("https://github.com/syed-sameer-ul-hassan"); }
+                                    mouse-cursor: pointer;
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+                                    Text { text: "GitHub:"; color: #6e8ca3; font-size: 12px; font-weight: 600; }
+                                    Text { text: "github.com/syed-sameer-ul-hassan"; color: #1EBBD7; font-size: 12px; font-weight: 600; }
+                                }
+                            }
+
+                            // Website Link
+                            Rectangle {
+                                height: 20px;
+                                background: transparent;
+                                TouchArea {
+                                    clicked => { root.open-url("https://manuedesk.orildo.sbs"); }
+                                    mouse-cursor: pointer;
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+                                    Text { text: "Website:"; color: #6e8ca3; font-size: 12px; font-weight: 600; }
+                                    Text { text: "manuedesk.orildo.sbs"; color: #51c4b5; font-size: 12px; font-weight: 600; }
+                                }
+                            }
+
+                            // Dev Portfolio Link
+                            Rectangle {
+                                height: 20px;
+                                background: transparent;
+                                TouchArea {
+                                    clicked => { root.open-url("https://sameer.orildo.sbs"); }
+                                    mouse-cursor: pointer;
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+                                    Text { text: "Dev Portfolio:"; color: #6e8ca3; font-size: 12px; font-weight: 600; }
+                                    Text { text: "sameer.orildo.sbs"; color: #1EBBD7; font-size: 12px; font-weight: 600; }
+                                }
+                            }
+
+                            // Email Link
+                            Rectangle {
+                                height: 20px;
+                                background: transparent;
+                                TouchArea {
+                                    clicked => { root.open-url("mailto:manuedesk@orildo.sbs"); }
+                                    mouse-cursor: pointer;
+                                }
+                                HorizontalLayout {
+                                    spacing: 6px;
+                                    alignment: start;
+                                    Text { text: "Email:"; color: #6e8ca3; font-size: 12px; font-weight: 600; }
+                                    Text { text: "manuedesk@orildo.sbs"; color: #FFFFFF; font-size: 12px; font-weight: 500; }
+                                }
+                            }
+                        }
+
+                        // Squarish Avatar Image on right
+                        Rectangle {
+                            width: 120px;
+                            height: 120px;
+                            border-radius: 16px;
+                            background: #0f3d3f;
+                            border-width: 2px;
+                            border-color: #1f5759;
+                            clip: true;
+
+                            Image {
+                                source: @image-url("assets/developer.png");
+                                width: 120px;
+                                height: 120px;
+                            }
+                        }
+                    }
+                }
+
+                // Project & Open Source License Card
+                Rectangle {
+                    height: 195px;
+                    border-radius: 14px;
+                    background: #082123;
+                    border-width: 1px;
+                    border-color: #17474a;
+
+                    VerticalLayout {
+                        padding-left: 22px;
+                        padding-right: 22px;
+                        padding-top: 18px;
+                        padding-bottom: 18px;
+                        spacing: 12px;
+                        alignment: space-between;
+
+                        Text {
+                            text: "PROJECT & LICENSE INFORMATION";
+                            color: #6e8ca3;
+                            font-size: 11px;
+                            font-weight: 800;
+                            letter-spacing: 1.5px;
+                            horizontal-alignment: left;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            Text { text: "Application:"; color: #6e8ca3; font-size: 13px; font-weight: 600; }
+                            Text { text: "manue-desk"; color: #FFFFFF; font-size: 13px; font-weight: 700; }
+                            Text { text: "(Version 1.0.0)"; color: #1EBBD7; font-size: 13px; font-weight: 600; }
+                        }
+
+                        // Repository Link (Clickable)
+                        Rectangle {
+                            height: 24px;
+                            background: transparent;
+                            TouchArea {
+                                clicked => { root.open-url("https://github.com/syed-sameer-ul-hassan/ADD-TO-MANUE"); }
+                                mouse-cursor: pointer;
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+                                Text { text: "Repository:"; color: #6e8ca3; font-size: 13px; font-weight: 600; }
+                                Text { text: "github.com/syed-sameer-ul-hassan/ADD-TO-MANUE"; color: #1EBBD7; font-size: 12px; font-weight: 600; }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            Text { text: "License:"; color: #6e8ca3; font-size: 13px; font-weight: 600; }
+                            Text { text: "Apache 2.0 License (Open Source)"; color: #51c4b5; font-size: 13px; font-weight: 700; }
+                        }
+
+                        Rectangle {
+                            height: 36px;
+                            border-radius: 8px;
+                            background: #0f3d3f;
+                            border-width: 1px;
+                            border-color: #1f5759;
+
+                            TouchArea {
+                                clicked => { root.open-url("https://github.com/syed-sameer-ul-hassan/ADD-TO-MANUE"); }
+                                mouse-cursor: pointer;
+                            }
+
+                            Text {
+                                text: "♥ Free and Open Source Software (FOSS) under Apache 2.0";
+                                color: #FFFFFF;
+                                font-size: 12px;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: 100%;
+                                height: 100%;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ═════════════════════════════════════════════════════════════════════
+        // RIGHT PANEL (Floating 320px card in 340px column — NEVER moves)
+        // ═════════════════════════════════════════════════════════════════════
+        Rectangle {
+            width: 340px;
+            horizontal-stretch: 0;
+            background: #061516;
+
+            VerticalLayout {
+                alignment: center;
+                padding-left: 6px;
+                padding-right: 14px;
+
+                Rectangle {
+                    width: 320px;
+                    height: 520px;
+                    border-radius: 16px;
+                    background: #08282a;
+                    border-width: 1px;
+                    border-color: #184c4e;
+
+                    VerticalLayout {
+                        padding-left: 20px;
+                        padding-right: 20px;
+                        padding-top: 14px;
+                        padding-bottom: 24px;
+                        alignment: space-between;
+
+                        // ── Custom Window Controls (Top Right) ──
+                        HorizontalLayout {
+                            alignment: end;
+                            spacing: 6px;
+
+                            // Minimize Button
+                            Rectangle {
+                                width: 28px;
+                                height: 28px;
+                                border-radius: 7px;
+                                background: #0e4749;
+                                border-width: 1px;
+                                border-color: #1f5759;
+
+                                TouchArea {
+                                    clicked => { root.minimize-window(); }
+                                    mouse-cursor: pointer;
+                                }
+
+                                Text {
+                                    text: "─";
+                                    color: #6e8ca3;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: 100%;
+                                    height: 100%;
+                                }
+                            }
+
+                            // Close Button
+                            Rectangle {
+                                width: 28px;
+                                height: 28px;
+                                border-radius: 7px;
+                                background: #2a1535;
+                                border-width: 1px;
+                                border-color: #8B3F5A;
+
+                                TouchArea {
+                                    clicked => { root.close-window(); }
+                                    mouse-cursor: pointer;
+                                }
+
+                                Text {
+                                    text: "✕";
+                                    color: #8B3F5A;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    width: 100%;
+                                    height: 100%;
+                                }
+                            }
+                        }
+
+                        // ── Concentric Circles Graphic ──
+                        Rectangle {
+                            height: 170px;
+
+                            Rectangle {
+                                width: 166px;
+                                height: 166px;
+                                border-radius: 83px;
+                                background: transparent;
+                                border-width: 1px;
+                                border-color: #0e4749;
+                                x: (parent.width - 166px) / 2;
+                                y: (parent.height - 166px) / 2;
+                            }
+
+                            Rectangle {
+                                width: 126px;
+                                height: 126px;
+                                border-radius: 63px;
+                                background: transparent;
+                                border-width: 1px;
+                                border-color: #154548;
+                                x: (parent.width - 126px) / 2;
+                                y: (parent.height - 126px) / 2;
+                            }
+
+                            Rectangle {
+                                width: 88px;
+                                height: 88px;
+                                border-radius: 44px;
+                                background: #061516;
+                                border-width: 2px;
+                                border-color: root.current-tab == 3 ? #1EBBD7 : (root.current-tab == 2 ? #655560 : (root.current-tab == 1 ? #FFFFFF : (root.success ? #FFFFFF : #174b4e)));
+                                animate border-color { duration: 200ms; }
+                                x: (parent.width - 88px) / 2;
+                                y: (parent.height - 88px) / 2;
+
+                                Image {
+                                    source: root.current-tab == 3 ? @image-url("assets/info.svg") : (root.current-tab == 2 ? @image-url("assets/settings.svg") : (root.current-tab == 1 ? @image-url("assets/apps.svg") : @image-url("assets/app-icon.svg")));
+                                    width: 40px;
+                                    height: 40px;
+                                    x: (parent.width - 40px) / 2;
+                                    y: (parent.height - 40px) / 2;
+                                    colorize: root.current-tab == 2 ? #6e8ca3 : #FFFFFF;
+                                    animate colorize { duration: 200ms; }
+                                }
+                            }
+                        }
+
+                        // ── Action Card ──
+                        Rectangle {
+                            height: 156px;
+                            border-radius: 14px;
+                            background: #082123;
+                            border-width: 1px;
+                            border-color: #17474a;
+
+                            VerticalLayout {
+                                padding-left: 16px;
+                                padding-right: 16px;
+                                padding-top: 16px;
+                                padding-bottom: 16px;
+                                alignment: space-between;
+
+                                Text {
+                                    text: root.current-tab == 0 ? (root.success ? "LAUNCHER READY" : (root.app-name != "" ? "READY TO CREATE" : "IDLE")) : (root.current-tab == 1 ? "MANAGE SHORTCUTS" : (root.current-tab == 2 ? "SETTINGS" : "DEVELOPER INFO"));
+                                    color: root.current-tab == 2 ? #655560 : (root.current-tab == 1 ? #FFFFFF : (root.success ? #FFFFFF : #6e8ca3));
+                                    font-size: 11px;
+                                    font-weight: 800;
+                                    letter-spacing: 1.5px;
+                                    horizontal-alignment: center;
+                                }
+
+                                HorizontalLayout {
+                                    alignment: center;
+                                    spacing: 8px;
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        Image {
+                                            source: root.current-tab == 0 ? @image-url("assets/apps.svg") : (root.current-tab == 1 ? @image-url("assets/apps.svg") : (root.current-tab == 2 ? @image-url("assets/settings.svg") : @image-url("assets/info.svg")));
+                                            width: 14px;
+                                            height: 14px;
+                                            colorize: root.current-tab == 2 ? #6e8ca3 : (root.current-tab == 1 ? #fff : #8ea8c3);
+                                        }
+                                    }
+
+                                    Text {
+                                        text: root.current-tab == 0 ? (root.app-name != "" ? root.app-name : "No app specified") : (root.current-tab == 1 ? (root.shortcuts-count + " shortcuts installed") : (root.current-tab == 2 ? "Preferences" : "Open Source (v1.0.0)"));
+                                        color: #FFFFFF;
+                                        font-size: 13px;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                        overflow: elide;
+                                    }
+                                }
+
+                                // Action button
+                                Rectangle {
+                                    height: 46px;
+                                    border-radius: 12px;
+                                    background: #ffffff;
+                                    animate background { duration: 200ms; }
+
+                                    TouchArea {
+                                        clicked => {
+                                            if (root.current-tab == 0) {
+                                                root.create-launcher();
+                                            } else if (root.current-tab == 1) {
+                                                if (root.is-editing-shortcut) {
+                                                    if (root.edit-app-name == "") {
+                                                        root.status-message = "⚠ Application name cannot be empty.";
+                                                        root.success = false;
+                                                    } else {
+                                                        root.confirm-title = "Save Changes?";
+                                                        root.confirm-message = "Are you sure you want to update the shortcut settings for '" + root.edit-app-name + "'?";
+                                                        root.confirm-action-type = 1;
+                                                        root.show-confirm-dialog = true;
+                                                    }
+                                                } else {
+                                                    root.current-tab = 0;
+                                                }
+                                            } else {
+                                                root.current-tab = 0;
+                                            }
+                                        }
+                                        mouse-cursor: pointer;
+                                    }
+
+                                    Text {
+                                        text: root.current-tab == 0 ? "Create" : (root.current-tab == 1 ? (root.is-editing-shortcut ? "Save Changes" : "Create") : "Back to Launcher");
+                                        color: root.current-tab == 2 ? #5d7d8e : #061516;
+                                        font-size: 14px;
+                                        font-weight: 800;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                        width: 100%;
+                                        height: 100%;
+                                        animate color { duration: 200ms; }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── Bottom Status Bar ──
+                        Rectangle {
+                            height: 40px;
+                            border-radius: 10px;
+                            background: root.status-message == "" ? #061516 : (root.success ? #134b4d : #1a1220);
+                            border-width: 1px;
+                            border-color: root.status-message == "" ? #154548 : (root.success ? #FFFFFF : #8B3F5A);
+
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                alignment: center;
+
+                                Text {
+                                    text: root.status-message != "" ? root.status-message : "Target: ~/.local/share/applications";
+                                    color: root.status-message == "" ? #5d7d8e : (root.success ? #FFFFFF : #a05068);
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } // end main content Rectangle (2nd child of HorizontalLayout)
+        } // end HorizontalLayout
+
+        // ═════════════════════════════════════════════════════════════════════
+        // CONFIRMATION DIALOG MODAL OVERLAY — sibling of HorizontalLayout
+        // ═════════════════════════════════════════════════════════════════════
+        if root.show-confirm-dialog : Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: parent.height;
+            background: transparent;
+
+            TouchArea {
+                clicked => { /* consume background click */ }
+            }
+
+            Rectangle {
+                width: 440px;
+                height: 210px;
+                border-radius: 16px;
+                background: #0e4749;
+                border-width: 1px;
+                border-color: #1a5254;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+
+                VerticalLayout {
+                    padding-left: 24px;
+                    padding-right: 24px;
+                    padding-top: 24px;
+                    padding-bottom: 24px;
+                    alignment: space-between;
+
+                    HorizontalLayout {
+                        spacing: 16px;
+                        alignment: start;
+
+                        VerticalLayout {
+                            alignment: start;
+                            Rectangle {
+                                width: 44px;
+                                height: 44px;
+                                border-radius: 12px;
+                                background: root.confirm-action-type == 0 ? #2a1535 : #0e4749;
+                                border-width: 1px;
+                                border-color: root.confirm-action-type == 0 ? #8B3F5A : #805e73;
+
+                                Image {
+                                    source: @image-url("assets/warning.svg");
+                                    width: 22px;
+                                    height: 22px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    colorize: root.confirm-action-type == 0 ? #FFFFFF : #FFFFFF;
+                                }
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: start;
+                            spacing: 6px;
+                            horizontal-stretch: 1;
+
+                            Text {
+                                text: root.confirm-title;
+                                color: #FFFFFF;
+                                font-size: 18px;
+                                font-weight: 700;
+                            }
+
+                            Text {
+                                text: root.confirm-message;
+                                color: #8ea8c3;
+                                font-size: 13px;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+
+                    // Dialog action buttons
+                    HorizontalLayout {
+                        alignment: end;
+                        spacing: 12px;
+
+                        // Cancel Button
+                        Rectangle {
+                            width: 100px;
+                            height: 40px;
+                            border-radius: 8px;
+                            background: #134b4d;
+                            border-width: 1px;
+                            border-color: #266062;
+
+                            TouchArea {
+                                clicked => { root.show-confirm-dialog = false; }
+                                mouse-cursor: pointer;
+                            }
+
+                            Text {
+                                text: "Cancel";
+                                color: #6e8ca3;
+                                font-size: 13px;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: 100%;
+                                height: 100%;
+                            }
+                        }
+
+                        // Confirm / Proceed Button
+                        Rectangle {
+                            width: 130px;
+                            height: 40px;
+                            border-radius: 8px;
+                            background: root.confirm-action-type == 0 ? #8B3F5A : #805e73;
+
+                            TouchArea {
+                                clicked => {
+                                    root.show-confirm-dialog = false;
+                                    if (root.confirm-action-type == 0) {
+                                        root.delete-shortcut(root.pending-delete-path);
+                                    } else {
+                                        root.save-shortcut(
+                                            root.edit-file-path,
+                                            root.edit-app-name,
+                                            root.edit-exec-path,
+                                            root.edit-icon-path,
+                                            root.edit-run-in-terminal
+                                        );
+                                    }
+                                }
+                                mouse-cursor: pointer;
+                            }
+
+                            Text {
+                                text: root.confirm-action-type == 0 ? "Yes, Delete" : "Yes, Save";
+                                color: root.confirm-action-type == 0 ? #FFFFFF : #061516;
+                                font-size: 13px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                                width: 100%;
+                                height: 100%;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } // end root Rectangle
+} // end MainWindow
